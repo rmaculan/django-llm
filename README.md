@@ -23,8 +23,12 @@ A Django application that provides a chat interface for interacting with a local
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/django-llm.git
+git clone https://github.com/rmaculan/django-llm.git
 cd django-llm
+
+email: robdesignsoftware@proton.me for .env or
+create a django app and insert it to this project.
+Once finished, proceed to step 2.
 ```
 
 2. Create a `.env` file in the project root:
@@ -133,4 +137,4 @@ docker-compose up --build
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details. 
+See the LICENSE file for details. 
