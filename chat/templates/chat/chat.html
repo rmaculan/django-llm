@@ -1,0 +1,206 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <!-- Sidebar -->
+        <div class="col-md-3 col-lg-2 d-md-block bg-light sidebar collapse">
+            <div class="position-sticky pt-3">
+                <button class="btn btn-primary w-100 mb-3" id="newChatBtn">New Chat</button>
+                <div class="list-group" id="chatSessions">
+                    {% for session in chat_sessions %}
+                    <a href="#" class="list-group-item list-group-item-action" data-session-id="{{ session.id }}">
+                        {{ session.title }}
+                    </a>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Main content -->
+        <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4">
+            <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+                <h1 class="h2">Chat</h1>
+                <div class="btn-toolbar mb-2 mb-md-0">
+                    <div class="btn-group me-2">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" id="clearChat">Clear Chat</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" id="exportChat">Export</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Chat messages -->
+            <div class="chat-messages" id="chatMessages" style="height: calc(100vh - 250px); overflow-y: auto;">
+                <!-- Messages will be inserted here -->
+            </div>
+
+            <!-- Input area -->
+            <div class="chat-input-area mt-3">
+                <form id="messageForm" class="d-flex">
+                    <input type="text" class="form-control me-2" id="messageInput" placeholder="Type your message...">
+                    <button type="submit" class="btn btn-primary">Send</button>
+                </form>
+            </div>
+        </main>
+    </div>
+</div>
+
+<!-- Loading spinner -->
+<div class="spinner-border text-primary d-none" role="status" id="loadingSpinner">
+    <span class="visually-hidden">Loading...</span>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const messageForm = document.getElementById('messageForm');
+    const messageInput = document.getElementById('messageInput');
+    const chatMessages = document.getElementById('chatMessages');
+    const loadingSpinner = document.getElementById('loadingSpinner');
+    const newChatBtn = document.getElementById('newChatBtn');
+    const chatSessions = document.getElementById('chatSessions');
+    const clearChatBtn = document.getElementById('clearChat');
+    const exportChatBtn = document.getElementById('exportChat');
+
+    let currentSessionId = null;
+
+    // Create new chat session
+    newChatBtn.addEventListener('click', async function() {
+        try {
+            const response = await fetch('/chat/sessions/create/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: 'title=New Chat'
+            });
+            const data = await response.json();
+            currentSessionId = data.id;
+            
+            // Add new session to sidebar
+            const newSession = document.createElement('a');
+            newSession.href = '#';
+            newSession.className = 'list-group-item list-group-item-action';
+            newSession.dataset.sessionId = data.id;
+            newSession.textContent = data.title;
+            chatSessions.insertBefore(newSession, chatSessions.firstChild);
+            
+            // Clear chat messages
+            chatMessages.innerHTML = '';
+        } catch (error) {
+            console.error('Error creating new chat:', error);
+        }
+    });
+
+    // Send message
+    messageForm.addEventListener('submit', async function(e) {
+        e.preventDefault();
+        if (!currentSessionId) {
+            alert('Please create a new chat session first');
+            return;
+        }
+
+        const message = messageInput.value.trim();
+        if (!message) return;
+
+        // Add user message to chat
+        appendMessage('user', message);
+        messageInput.value = '';
+
+        // Show loading spinner
+        loadingSpinner.classList.remove('d-none');
+
+        try {
+            const response = await fetch(`/chat/sessions/${currentSessionId}/messages/`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ message: message })
+            });
+            const data = await response.json();
+            
+            // Add assistant message to chat
+            appendMessage('assistant', data.response);
+        } catch (error) {
+            console.error('Error sending message:', error);
+            appendMessage('system', 'Error: Failed to send message');
+        } finally {
+            loadingSpinner.classList.add('d-none');
+        }
+    });
+
+    // Load chat history
+    async function loadChatHistory(sessionId) {
+        try {
+            const response = await fetch(`/chat/sessions/${sessionId}/history/`);
+            const data = await response.json();
+            
+            chatMessages.innerHTML = '';
+            data.messages.forEach(msg => {
+                appendMessage(msg.role, msg.content);
+            });
+        } catch (error) {
+            console.error('Error loading chat history:', error);
+        }
+    }
+
+    // Append message to chat
+    function appendMessage(role, content) {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `message ${role}-message mb-3`;
+        
+        const roleBadge = document.createElement('span');
+        roleBadge.className = 'badge bg-primary me-2';
+        roleBadge.textContent = role;
+        
+        const contentSpan = document.createElement('span');
+        contentSpan.textContent = content;
+        
+        messageDiv.appendChild(roleBadge);
+        messageDiv.appendChild(contentSpan);
+        chatMessages.appendChild(messageDiv);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    // Handle chat session selection
+    chatSessions.addEventListener('click', function(e) {
+        if (e.target.classList.contains('list-group-item')) {
+            e.preventDefault();
+            const sessionId = e.target.dataset.sessionId;
+            currentSessionId = sessionId;
+            loadChatHistory(sessionId);
+        }
+    });
+
+    // Clear chat
+    clearChatBtn.addEventListener('click', function() {
+        if (currentSessionId) {
+            chatMessages.innerHTML = '';
+        }
+    });
+
+    // Export chat
+    exportChatBtn.addEventListener('click', function() {
+        if (!currentSessionId) return;
+        
+        const messages = Array.from(chatMessages.children).map(msg => ({
+            role: msg.querySelector('.badge').textContent,
+            content: msg.querySelector('span:last-child').textContent
+        }));
+        
+        const blob = new Blob([JSON.stringify(messages, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `chat-${currentSessionId}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    });
+});
+</script>
+{% endblock %} 
